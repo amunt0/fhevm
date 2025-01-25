@@ -1,0 +1,315 @@
+global:
+  imageRegistry: ghcr.io/zama-ai
+  imageTag: v0.8.2-rc4
+  keyGeneration:
+    version: v0.8.2-rc4
+    networkPath: /network-fhe-keys
+    kmsPath: /app/kms/core/service/keys
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+connector:
+  replicas: 1
+  image:
+    repository: kms-blockchain-connector-dev
+  env:
+    ASC_CONN__BLOCKCHAIN__ADDRESSES: http://kms-validator:9090
+    ASC_CONN__CORE__ADDRESSES: http://kms-core:50051
+    ASC_CONN__STORE__URL: http://gateway-store:8088
+    ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__INITIAL_WAIT_TIME: "1"
+    ASC_CONN__CORE__TIMEOUT_CONFIG__DECRYPTION__RETRY_INTERVAL: "1"
+    ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__INITIAL_WAIT_TIME: "1"
+    ASC_CONN__CORE__TIMEOUT_CONFIG__REENCRYPTION__RETRY_INTERVAL: "1"
+
+gateway:
+  replicas: 1
+  image:
+    repository: kms-blockchain-gateway-dev
+  ports:
+    - name: http
+      port: 7077
+      targetPort: 7077
+  env:
+    ASC_CONN__BLOCKCHAIN__ADDRESSES: "http://fhevm-zama-kms-validator:9090"
+    GATEWAY__ETHEREUM__FHE_LIB_ADDRESS: "000000000000000000000000000000000000005d"
+    GATEWAY__ETHEREUM__HTTP_URL: "http://fhevm-zama-fhevm-validator:8545"
+    GATEWAY__ETHEREUM__LISTENER_TYPE: "FHEVM_V1_1"
+    GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS: "c8c9303Cd7F337fab769686B593B87DC3403E0ce"
+    GATEWAY__ETHEREUM__RELAYER_KEY: "7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67"
+    GATEWAY__ETHEREUM__WSS_URL: "ws://fhevm-zama-fhevm-validator:8546"
+    GATEWAY__KMS__ADDRESS: "http://fhevm-zama-kms-validator:9090"
+    GATEWAY__KMS__KEY_ID: "408d8cbaa51dece7f782fe04ba0b1c1d017b1088"
+    GATEWAY__STORAGE__URL: "http://fhevm-zama-gateway-store:8088"
+    RUST_BACKTRACE: "1"
+  config:
+    tick_interval_secs: 1
+    storage_path: "./temp/events.toml"
+    oracle:
+      addresses: ["http://{{ .Release.Name }}-fhevm-validator:26657"]
+    blockchain:
+      addresses: ["http://{{ .Release.Name }}-kms-validator:9090"]
+      contract: "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d"
+      signkey:
+        mnemonic: "bachelor similar spirit copper rely carbon web hobby conduct wrap conduct wire shine parrot erosion divert crucial balance lock reason price ignore educate open"
+        bip32: "xprv9s21ZrQH143K3FQVQn1Z6"
+      fee:
+        denom: "ucosm"
+        amount: 3000000
+  volumes:
+    config:
+      mountPath: /app/gateway/config/default.toml
+      size: 100Mi
+
+gatewayStore:
+  replicas: 1
+  image:
+    repository: kms-blockchain-gateway-dev
+  ports:
+    - name: http
+      port: 8088
+      targetPort: 8088
+
+kmsValidator:
+  replicas: 1
+  image:
+    repository: kms-blockchain-asc-dev
+  ports:
+    - name: tendermint-p2p
+      port: 36656
+      targetPort: 26656
+    - name: tendermint-rpc
+      port: 36657
+      targetPort: 26657
+    - name: rest
+      port: 1317
+      targetPort: 1317
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+  healthcheck:
+    test: "wget -Sq --spider http://localhost:26657/status"
+    interval: 1
+    timeout: 1
+    retries: 5
+    startPeriod: 10
+
+kmsCore:
+  replicas: 1
+  image:
+    repository: kms-service-dev
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+  volumes:
+    keys:
+      mountPath: /app/kms/core/service/keys
+      size: 100Mi
+  healthcheck:
+    test: "grpc-health-probe --addr=localhost:50051" 
+    interval: 1
+    timeout: 1
+    retries: 5
+    startPeriod: 10
+
+fhevmValidator:
+  replicas: 1
+  image:
+    repository: ethermint-dev-node
+    tag: v0.5.1-2
+  env:
+    TFHE_EXECUTOR_CONTRACT_ADDRESS: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+  ports:
+    - name: p2p
+      port: 26656
+      targetPort: 26656
+    - name: rpc
+      port: 26657
+      targetPort: 26657
+    - name: http
+      port: 8545
+      targetPort: 8545
+    - name: ws
+      port: 8546
+      targetPort: 8546
+  volumes:
+    networkKeys:
+      mountPath: /network-fhe-keys
+      size: 100Mi
+    setup:
+      mountPath: /config/setup.sh
+      size: 100Mi
+  healthcheck:
+    test: 'curl -s -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:8546'  # Quote this with single quotes since it contains double quotes
+    interval: 5
+    timeout: 3
+    retries: 5
+    startPeriod: 20
+
+###############
+### test job
+###############
+
+testPrep:
+  enabled: true
+  fhevmVersion: "v0.5.4-0"
+  image:
+    repository: node
+    tag: 20-bullseye    # Updated to Node.js 20
+    pullPolicy: IfNotPresent
+
+  validatorService: "fhevm-zama-fhevm-validator:8545"
+  fundingDelay: 8
+  backoffLimit: 1
+
+  resources:
+    limits:
+      memory: "2Gi"     # Increased memory limit
+    requests:
+      memory: "512Mi"     # Increased memory request
+      cpu: "1"
+
+  addresses:
+    - "a5e1defb98efe38ebb2d958cee052410247f4c80"
+    - "fCefe53c7012a075b8a711df391100d9c431c468"
+    - "a44366bAA26296c1409AD1e284264212029F02f1"
+    - "c1d91b49A1B3D1324E93F86778C44a03f1063f1b"
+    - "305F1F471e9baCFF2b3549F9601f9A4BEafc94e1"
+    - "8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4"
+    - "03734276e8f8ab253ff4295e66228DAC936FF5b8"
+    - "9FE8958A2920985AC7ab8d320fDFaB310135a05B"
+    - "466f26442DD182C9A1b018Cd06671F9791DdE8Ef"
+    - "c45994e4098271c3140117ebD5c74C70dd56D9cd"
+    - "97F272ccfef4026A1F3f0e0E879d514627B84E69"
+  mnemonic: "bachelor similar spirit copper rely carbon web hobby conduct wrap conduct wire shine parrot erosion divert crucial balance lock reason price ignore educate open"
+  gatewayDeployerKey: "717fd99986df414889fd8b51069d4f90a50af72e542c58ee065f5883779099c6"
+  gatewayOwnerKey: "717fd99986df414889fd8b51069d4f90a50af72e542c58ee065f5883779099c6"
+  gatewayRelayerKey: "7ec931411ad75a7c201469a385d6f18a325d4923f9f213bd882bbea87e160b67"  
+  volumes:
+    keys:
+      size: "100Mi" 
+
+###############
+### aync test job
+###############
+asyncTest:
+  enabled: true
+  backoffLimit: 1
+  resources:
+    limits:
+      memory: "1Gi"
+    requests:
+      cpu: "0.3"
+      memory: "128Mi"
+
+###############
+### toml
+###############
+# Configuration values
+contract: "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d"
+mnemonic: "bachelor similar spirit copper rely carbon web hobby conduct wrap conduct wire shine parrot erosion divert crucial balance lock reason price ignore educate open"
+bip32: "xprv9s21ZrQH143K3FQVQn1Z6"
+
+# Fee configuration
+fee:
+  denom: "ucosm"
+  amount: 3000000
+
+# Timeout configurations
+timeouts:
+  channel: 60
+  crs:
+    initial: 60
+    retry: 60
+    maxPolls: 120
+  keygen:
+    initial: 18000
+    retry: 15000
+    maxPolls: 1150
+  preproc:
+    initial: 18000
+    retry: 15000
+    maxPolls: 1150
+  decryption:
+    initial: 1
+    retry: 1
+    maxPolls: 24
+  reencryption:
+    initial: 1
+    retry: 1
+    maxPolls: 24
+
+# Tracing configuration
+tracing:
+  serviceName: "kms-asc-connector"
+  endpoint: "http://localhost:4317"
+
+# Store configuration
+store:
+  url: "http://store:8088"
+
+# Key generation configuration
+keyGeneration:
+  enabled: true
+  configMap:
+    name: "key-generation"
+    defaultMode: 0755
+
+# Setup configuration
+setup:
+  configMap:
+    name: "fhevm-setup"
+
+# Resource configurations
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+###############
+### block processor
+###############
+
+blockProcessor:
+  enabled: true
+  image:
+    repository: ghcr.io/amunt0/evm-processor/block-processor
+    tag: latest # 0.0.1 ?
+    pullPolicy: Always
+
+  rpcEndpoint: "fhevm-zama-fhevm-validator:8545"
+  tendermintNode: "fhevm-zama-fhevm-validator"
+
+  startBlock: "0"  # Starting block number
+  chunkSize: 30000
+  compression:
+    type: "zstd"
+    level: 3
+  rowGroupSize: 30000
+
+  persistence:
+    size: "5Gi"
+    storageClass: "gp3"
+
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 120m
+      memory: 128Mi
+  
+  autoscaling:
+    enabled: false

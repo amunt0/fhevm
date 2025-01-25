@@ -1,0 +1,64 @@
+{{- if .Values.kmsCore }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-kms-core
+  labels:
+    app: {{ .Release.Name }}
+    component: kms-core
+spec:
+  replicas: {{ .Values.kmsCore.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: kms-core
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: kms-core
+    spec:
+      initContainers:
+        - name: init-keys-kms
+          image: ghcr.io/zama-ai/kms-service-dev:{{ .Values.global.imageTag }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              cp /app/kms/core/service/keys/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 /network-fhe-keys/sks
+              cp /app/kms/core/service/keys/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 /network-fhe-keys/pks
+
+              # Copy all keys for kms-core
+              cp -r /app/kms/core/service/keys/* /kmskeys
+          volumeMounts:
+            - name: kms-core-keys
+              mountPath: /kmskeys
+      containers:
+        - name: kms-core
+          image: {{ .Values.global.imageRegistry }}/{{ .Values.kmsCore.image.repository }}:{{ .Values.global.imageTag }}
+          {{- if .Values.kmsCore.ports }}
+          ports:
+            {{- range .Values.kmsCore.ports }}
+            - containerPort: {{ .targetPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          {{- if .Values.kmsCore.healthcheck }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - {{ .Values.kmsCore.healthcheck.test | quote }}
+            initialDelaySeconds: {{ .Values.kmsCore.healthcheck.startPeriod | default 10 }}
+            periodSeconds: {{ .Values.kmsCore.healthcheck.interval | default 1 }}
+            timeoutSeconds: {{ .Values.kmsCore.healthcheck.timeout | default 1 }}
+            failureThreshold: {{ .Values.kmsCore.healthcheck.retries | default 5 }}
+          {{- end }}
+          volumeMounts:
+            - name: kms-core-keys
+              mountPath: /app/kms/core/service/keys
+      volumes:
+        - name: kms-core-keys
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-kms-core-keys
+{{- end }}

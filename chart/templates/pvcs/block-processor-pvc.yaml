@@ -1,0 +1,19 @@
+{{- if .Values.blockProcessor.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fhevm.fullname" . }}-block-processor
+  labels:
+    {{- include "fhevm.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.blockProcessor.persistence.size | default "100Gi" }}
+  {{- if .Values.blockProcessor.persistence.storageClass }}
+  storageClassName: {{ .Values.blockProcessor.persistence.storageClass }}
+  {{- end }}
+{{- end }}

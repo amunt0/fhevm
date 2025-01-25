@@ -1,0 +1,29 @@
+{{- if and .Values.fhevmValidator .Values.fhevmValidator.volumes }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-fhevm-validator-keys
+  labels:
+    app: {{ .Release.Name }}
+    component: fhevm-validator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ default "100Mi" (dig "volumes" "networkKeys" "size" "100Mi" .Values.fhevmValidator) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-fhevm-validator-setup
+  labels:
+    app: {{ .Release.Name }}
+    component: fhevm-validator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ default "100Mi" (dig "volumes" "setup" "size" "100Mi" .Values.fhevmValidator) }}
+{{- end }}

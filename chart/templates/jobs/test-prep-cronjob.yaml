@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fhevm.fullname" . }}-test-preparation
+  labels:
+    {{- include "fhevm.labels" . | nindent 4 }}
+  annotations:
+    checksum/config: {{ include (print $.Template.BasePath "/configmaps/test-prep-configmap.yaml") . | sha256sum }}
+spec:
+  suspend: true
+  schedule: "0 0 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.testPrep.backoffLimit | default 1 }}
+      template:
+        metadata:
+          labels:
+            {{- include "fhevm.selectorLabels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ include "fhevm.fullname" . }}-test-prep-sa
+          initContainers:
+          - name: init-keys
+            image: "ghcr.io/zama-ai/kms-service-dev:{{ .Values.global.imageTag }}"
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                cp -r /app/kms/core/service/keys/* /fhekeys
+                echo "keys copied to /fhekeys"
+            volumeMounts:
+            - name: fhe-keys
+              mountPath: /fhekeys
+          containers:
+          - name: test-prep
+            image: "{{ .Values.testPrep.image.repository }}:{{ .Values.testPrep.image.tag }}"
+            imagePullPolicy: {{ .Values.testPrep.image.pullPolicy }}
+            env:
+            - name: FHE_NETWORK_KEYS_DIR
+              value: "/fhevm/network-fhe-keys"
+            - name: VALIDATOR_SERVICE
+              value: {{ .Values.testPrep.validatorService | quote }}
+            - name: MNEMONIC
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fhevm.fullname" . }}-test-prep-secrets
+                  key: mnemonic
+            - name: PRIVATE_KEY_GATEWAY_DEPLOYER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fhevm.fullname" . }}-test-prep-secrets
+                  key: gateway-deployer-key
+            - name: PRIVATE_KEY_GATEWAY_OWNER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fhevm.fullname" . }}-test-prep-secrets
+                  key: gateway-owner-key
+            - name: PRIVATE_KEY_GATEWAY_RELAYER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fhevm.fullname" . }}-test-prep-secrets
+                  key: gateway-relayer-key
+            {{- range .Values.testPrep.extraEnvs }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            command:
+            - /bin/bash
+            - /scripts/setup-script.sh
+            workingDir: /fhevm
+            resources:
+              limits:
+                memory: {{ .Values.testPrep.resources.limits.memory | quote }}
+              requests:
+                cpu: {{ .Values.testPrep.resources.requests.cpu | quote }}
+                memory: {{ .Values.testPrep.resources.requests.memory | quote }}
+            volumeMounts:
+            - name: setup-script
+              mountPath: /scripts
+            - name: fhe-keys
+              mountPath: /fhevm/network-fhe-keys
+          volumes:
+          - name: setup-script
+            configMap:
+              name: {{ include "fhevm.fullname" . }}-test-prep-config
+              defaultMode: 0755
+          - name: fhe-keys
+            persistentVolumeClaim:
+              claimName: {{ include "fhevm.fullname" . }}-test-prep-keys
+          restartPolicy: Never

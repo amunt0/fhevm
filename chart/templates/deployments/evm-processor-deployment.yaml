@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fhevm.fullname" . }}-block-processor
+spec:
+  serviceName: {{ include "fhevm.fullname" . }}-block-processor
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fhevm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: block-processor
+  template:
+    metadata:
+      labels:
+        {{- include "fhevm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: block-processor
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: block-processor
+          image: "{{ .Values.blockProcessor.image.repository }}:{{ .Values.blockProcessor.image.tag }}"
+          imagePullPolicy: {{ .Values.blockProcessor.image.pullPolicy }}
+          env:
+            - name: TM_NODE
+              value: "http://{{ .Values.blockProcessor.tendermintNode }}:26657"
+            - name: STORAGE_PATH
+              value: "/data"
+            - name: RPC_ENDPOINT
+              value: "http://{{ .Values.blockProcessor.rpcEndpoint }}"
+            - name: START_BLOCK
+              value: "{{ .Values.blockProcessor.startBlock }}"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+          volumeMounts:
+            - name: data
+              mountPath: "/data"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "standard"  # Add your storage class if different
+        resources:
+          requests:
+            storage: 1Gi 

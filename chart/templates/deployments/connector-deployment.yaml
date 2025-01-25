@@ -1,0 +1,33 @@
+{{- if .Values.connector }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-connector
+  labels:
+    app: {{ .Release.Name }}
+    component: connector
+spec:
+  replicas: {{ .Values.connector.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: connector
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: connector
+    spec:
+      containers:
+        - name: connector
+          image: {{ .Values.global.imageRegistry }}/{{ .Values.connector.image.repository }}:{{ .Values.global.imageTag }}
+          args:
+            - kms-blockchain-connector
+          {{- if .Values.connector.env }}
+          env:
+            {{- range $key, $value := .Values.connector.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+{{- end }}

@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fhevm.fullname" . }}-async-test
+  labels:
+    {{- include "fhevm.labels" . | nindent 4 }}
+spec:
+  suspend: true
+  schedule: "0 0 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.asyncTest.backoffLimit | default 1 }}
+      template:
+        metadata:
+          labels:
+            {{- include "fhevm.selectorLabels" . | nindent 12 }}
+        spec:
+          containers:
+          - name: async-test
+            image: "{{ .Values.testPrep.image.repository }}:{{ .Values.testPrep.image.tag }}"
+            imagePullPolicy: {{ .Values.testPrep.image.pullPolicy }}
+            command:
+            - /bin/bash
+            - /scripts/run-async-test.sh
+            resources:
+              limits:
+                memory: {{ .Values.asyncTest.resources.limits.memory | quote }}
+              requests:
+                cpu: {{ .Values.asyncTest.resources.requests.cpu | quote }}
+                memory: {{ .Values.asyncTest.resources.requests.memory | quote }}
+            volumeMounts:
+            - name: test-script
+              mountPath: /scripts
+            - name: fhevm-data
+              mountPath: /fhevm
+          volumes:
+          - name: test-script
+            configMap:
+              name: {{ include "fhevm.fullname" . }}-async-test-config
+              defaultMode: 0755
+          - name: fhevm-data
+            emptyDir: {}
+          restartPolicy: Never

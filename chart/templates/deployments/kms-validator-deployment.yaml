@@ -1,0 +1,45 @@
+{{- if .Values.kmsValidator }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-kms-validator
+  labels:
+    app: {{ .Release.Name }}
+    component: kms-validator
+spec:
+  replicas: {{ .Values.kmsValidator.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: kms-validator
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: kms-validator
+    spec:
+      containers:
+        - name: kms-validator
+          image: {{ .Values.global.imageRegistry }}/{{ .Values.kmsValidator.image.repository }}:{{ .Values.global.imageTag }}
+          command:
+            - /app/bootstrap.sh
+          {{- if .Values.kmsValidator.ports }}
+          ports:
+            {{- range .Values.kmsValidator.ports }}
+            - containerPort: {{ .targetPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          {{- if .Values.kmsValidator.healthcheck }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - {{ .Values.kmsValidator.healthcheck.test | quote }}
+            initialDelaySeconds: {{ .Values.kmsValidator.healthcheck.startPeriod | default 10 }}
+            periodSeconds: {{ .Values.kmsValidator.healthcheck.interval | default 1 }}
+            timeoutSeconds: {{ .Values.kmsValidator.healthcheck.timeout | default 1 }}
+            failureThreshold: {{ .Values.kmsValidator.healthcheck.retries | default 5 }}
+          {{- end }}
+{{- end }}

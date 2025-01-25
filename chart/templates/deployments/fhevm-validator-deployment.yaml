@@ -1,0 +1,82 @@
+{{- if .Values.fhevmValidator }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-fhevm-validator
+  labels:
+    app: {{ .Release.Name }}
+    component: fhevm-validator
+spec:
+  replicas: {{ .Values.fhevmValidator.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: fhevm-validator
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: fhevm-validator
+    spec:
+      initContainers:
+        - name: init-keys-fhevm
+          image: ghcr.io/zama-ai/kms-service-dev:{{ .Values.global.imageTag }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+
+              rm -rf /networkkeys/*
+              cp /app/kms/core/service/keys/PUB/ServerKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 /networkkeys/sks
+              cp /app/kms/core/service/keys/PUB/PublicKey/408d8cbaa51dece7f782fe04ba0b1c1d017b1088 /networkkeys/pks
+              
+              # Debug - verify the copies
+              echo "Final contents:"
+              ls -la /networkkeys
+
+          volumeMounts:
+            - name: fhevm-validator-keys
+              mountPath: /networkkeys
+      containers:
+        - name: fhevm-validator
+          image: {{ .Values.global.imageRegistry }}/{{ .Values.fhevmValidator.image.repository }}:{{ .Values.fhevmValidator.image.tag }}
+          {{- if .Values.fhevmValidator.env }}
+          env:
+            {{- range $key, $value := .Values.fhevmValidator.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.fhevmValidator.ports }}
+          ports:
+            {{- range .Values.fhevmValidator.ports }}
+            - containerPort: {{ .targetPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          {{- if .Values.fhevmValidator.healthcheck }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -cx
+                - {{ .Values.fhevmValidator.healthcheck.test | quote }}
+            initialDelaySeconds: {{ .Values.fhevmValidator.healthcheck.startPeriod | default 10 }}
+            periodSeconds: {{ .Values.fhevmValidator.healthcheck.interval | default 1 }}
+            timeoutSeconds: {{ .Values.fhevmValidator.healthcheck.timeout | default 1 }}
+            failureThreshold: {{ .Values.fhevmValidator.healthcheck.retries | default 5 }}
+          {{- end }}
+          volumeMounts:
+            - mountPath: /network-fhe-keys
+              name: fhevm-validator-keys
+            - mountPath: /config/setup.sh
+              name: setup
+              subPath: setup.sh
+      volumes:
+        - name: fhevm-validator-keys
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-fhevm-validator-keys
+        - name: setup
+          configMap:
+            name: {{ .Release.Name }}-fhevm-setup
+            defaultMode: 0755
+{{- end }}

@@ -1,0 +1,33 @@
+{{- if .Values.gatewayStore }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway-store
+  labels:
+    app: {{ .Release.Name }}
+    component: gateway-store
+spec:
+  replicas: {{ .Values.gatewayStore.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: gateway-store
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: gateway-store
+    spec:
+      containers:
+        - name: gateway-store
+          image: {{ .Values.global.imageRegistry }}/{{ .Values.gatewayStore.image.repository }}:{{ .Values.global.imageTag }}
+          args:
+            - kv_store
+          {{- if .Values.gatewayStore.ports }}
+          ports:
+            {{- range .Values.gatewayStore.ports }}
+            - containerPort: {{ .targetPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+{{- end }}

@@ -1,0 +1,15 @@
+{{- if and .Values.kmsCore .Values.kmsCore.volumes }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-kms-core-keys
+  labels:
+    app: {{ .Release.Name }}
+    component: kms-core
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ default "100Mi" (dig "volumes" "keys" "size" "100Mi" .Values.kmsCore) }}
+{{- end }}

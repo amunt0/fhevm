@@ -1,0 +1,53 @@
+{{- if .Values.gateway }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    app: {{ .Release.Name }}
+    component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: gateway
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: {{ .Values.global.imageRegistry }}/{{ .Values.gateway.image.repository }}:{{ .Values.global.imageTag }}
+          env:
+            {{- range $key, $value := .Values.gateway.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}          
+          args:
+            - gateway
+          {{- if .Values.gateway.ports }}
+          ports:
+            {{- range .Values.gateway.ports }}
+            - containerPort: {{ .targetPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          {{- if .Values.gateway.env }}
+          env:
+            {{- range $key, $value := .Values.gateway.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/gateway/config/default.toml
+              subPath: default.toml
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-gateway-config
+{{- end }}

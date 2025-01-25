@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    app: {{ .Release.Name }}
+    component: gateway
+spec:
+  ports:
+    {{- if .Values.gateway }}
+    {{- if .Values.gateway.ports }}
+    {{- range .Values.gateway.ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: TCP
+    {{- end }}
+    {{- end }}
+    {{- end }}
+  selector:
+    app: {{ .Release.Name }}
+    component: gateway

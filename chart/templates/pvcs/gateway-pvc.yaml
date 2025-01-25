@@ -1,0 +1,15 @@
+{{- if and .Values.gateway .Values.gateway.volumes }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-gateway-config
+  labels:
+    app: {{ .Release.Name }}
+    component: gateway
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ default "100Mi" (dig "volumes" "config" "size" "100Mi" .Values.gateway) }}
+{{- end }}

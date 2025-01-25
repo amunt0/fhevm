@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gateway-store
+  labels:
+    app: {{ .Release.Name }}
+    component: gateway-store
+spec:
+  ports:
+    {{- if .Values.gatewayStore }}
+    {{- if .Values.gatewayStore.ports }}
+    {{- range .Values.gatewayStore.ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: TCP
+    {{- end }}
+    {{- end }}
+    {{- end }}
+  selector:
+    app: {{ .Release.Name }}
+    component: gateway-store

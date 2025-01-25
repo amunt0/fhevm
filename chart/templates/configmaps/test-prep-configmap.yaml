@@ -1,0 +1,217 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fhevm.fullname" . }}-test-prep-config
+  labels:
+    {{- include "fhevm.labels" . | nindent 4 }}
+data:
+  setup-script.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    # Install kubectl
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/    
+
+    LOGFILE="/tmp/test-prep.log"
+    exec 1> >(tee -a "$LOGFILE") 2>&1
+    
+    log() {
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    }
+    
+    error() {
+      log "ERROR: $1"
+      exit 1
+    }
+
+    # Function to get address from private key
+    get_address_from_private_key() {
+      local private_key=$1
+      # Use node to compute the address
+      node -e "
+        const ethers = require('ethers');
+        const wallet = new ethers.Wallet('${private_key}');
+        console.log(wallet.address);
+      "
+    }
+    
+    # Function to fund an address using kubectl exec
+    fund_address() {
+      local address=$1
+      log "Funding address: $address"
+      kubectl exec -n fhevm deploy/fhevm-zama-fhevm-validator -- faucet $address || error "Failed to fund address $address"
+      sleep {{ .Values.testPrep.fundingDelay | default 8 }}
+    }
+    
+    # Main execution starts here
+    log "Starting test preparation"
+    
+    # Clone repository
+    log "Cloning FHEVM repository"
+    git clone https://github.com/zama-ai/fhevm.git /tmp/fhevm || error "Failed to clone repository"
+    cd /tmp/fhevm
+    
+    log "Checking out version {{ .Values.testPrep.fhevmVersion | default "v0.5.4-0" }}"
+    git checkout {{ .Values.testPrep.fhevmVersion | default "v0.5.4-0" }} || error "Failed to checkout version"
+    
+    # Install dependencies
+    log "Installing npm dependencies"
+    npm install --no-audit --no-fund || error "Failed to install npm dependencies"
+    
+    # Install Linux-specific dependencies
+    if [[ "$(uname -s)" == "Linux" ]]; then
+      log "Installing Linux-specific dependencies"
+      npm install solidity-comments-linux-x64-gnu || error "Failed to install Linux dependencies"
+    fi
+    
+    # Create .env file with our environment variables
+    log "Creating .env file with environment variables"
+    cat > .env << EOL
+    MNEMONIC="${MNEMONIC}"
+    PRIVATE_KEY_GATEWAY_DEPLOYER="${PRIVATE_KEY_GATEWAY_DEPLOYER}"
+    PRIVATE_KEY_GATEWAY_OWNER="${PRIVATE_KEY_GATEWAY_OWNER}"
+    PRIVATE_KEY_GATEWAY_RELAYER="${PRIVATE_KEY_GATEWAY_RELAYER}"
+    VALIDATOR_SERVICE="${VALIDATOR_SERVICE}"
+    FHE_NETWORK_KEYS_DIR="${FHE_NETWORK_KEYS_DIR}"
+    HARDHAT_NETWORK="local"
+    EOL
+    
+    # Fund the deployer and other required addresses
+    log "Funding required addresses"
+    deployer_address=$(get_address_from_private_key "${PRIVATE_KEY_GATEWAY_DEPLOYER}")
+    owner_address=$(get_address_from_private_key "${PRIVATE_KEY_GATEWAY_OWNER}")
+    relayer_address=$(get_address_from_private_key "${PRIVATE_KEY_GATEWAY_RELAYER}")
+    
+    # log "Funding deployer address: $deployer_address"
+    # fund_address "$deployer_address"
+    # sleep 5
+    
+    # log "Funding owner address: $owner_address"
+    # fund_address "$owner_address"
+    # sleep 5
+    
+    # log "Funding relayer address: $relayer_address"
+    # fund_address "$relayer_address"
+    # sleep 5
+    fund_address "0xa5e1defb98efe38ebb2d958cee052410247f4c80"
+    fund_address "0xfCefe53c7012a075b8a711df391100d9c431c468"
+    fund_address "0xa44366bAA26296c1409AD1e284264212029F02f1"
+    fund_address "0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b"
+    fund_address "0x305F1F471e9baCFF2b3549F9601f9A4BEafc94e1"
+    fund_address "0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4"
+    fund_address "0x03734276e8f8ab253ff4295e66228DAC936FF5b8"
+    fund_address "0x9FE8958A2920985AC7ab8d320fDFaB310135a05B"
+    fund_address "0x466f26442DD182C9A1b018Cd06671F9791DdE8Ef"
+    fund_address "0xc45994e4098271c3140117ebD5c74C70dd56D9cd"
+    fund_address "0x97F272ccfef4026A1F3f0e0E879d514627B84E69"    
+
+
+    # Update hardhat config
+    log "Updating hardhat network configuration"
+    cat > update_config.sed << 'EOL'
+    /local: getChainConfig('local')/c\
+        local: {\
+          accounts: {\
+            count: 10,\
+            mnemonic,\
+            path: "m/44'/60'/0'/0",\
+          },\
+          chainId: 9000,\
+          url: process.env.VALIDATOR_SERVICE ? `http://${process.env.VALIDATOR_SERVICE}` : 'http://localhost:8545',\
+        },
+    EOL
+
+    sed -i -f update_config.sed hardhat.config.ts || error "Failed to update hardhat config"
+
+    log "Adding explicit account configuration..."
+    cat > hardhat.config.ts.new << 'EOL'
+    const config = require('./hardhat.config.ts').default;
+
+    // Update the local network configuration
+    config.networks.local = {
+      accounts: [
+        process.env.PRIVATE_KEY_GATEWAY_DEPLOYER,
+        process.env.PRIVATE_KEY_GATEWAY_OWNER,
+        process.env.PRIVATE_KEY_GATEWAY_RELAYER
+      ].filter(Boolean),
+      chainId: 9000,
+      url: process.env.VALIDATOR_SERVICE ? `http://${process.env.VALIDATOR_SERVICE}` : 'http://localhost:8545'
+    };
+
+    module.exports = config;
+    EOL
+
+    mv hardhat.config.ts.new hardhat.config.ts || error "Failed to update hardhat config"
+
+    # Wait for funds to be available
+    log "Waiting for funds to be available..."
+    sleep 10
+    
+    # Run setup steps
+    log "Running FHEVM setup steps"
+    export HARDHAT_NETWORK=local
+    npx hardhat clean || error "Failed to clean hardhat"
+    npx hardhat compile:specific --contract lib || error "Failed to compile lib contract"
+    npx hardhat compile:specific --contract gateway || error "Failed to compile gateway contract"
+    
+    log "Checking account balances before deployment..."
+    cat > check-balances.js << 'EOL'
+    const hre = require('hardhat');
+
+    async function main() {
+      try {
+        console.log('Network:', hre.network.name);
+        console.log('Provider URL:', hre.network.config.url);
+        
+        // Check deployer wallet
+        const deployerWallet = new hre.ethers.Wallet(process.env.PRIVATE_KEY_GATEWAY_DEPLOYER, hre.ethers.provider);
+        console.log('\nDeployer Information:');
+        console.log('Deployer address:', deployerWallet.address);
+        const deployerBalance = await hre.ethers.provider.getBalance(deployerWallet.address);
+        console.log('Deployer balance:', hre.ethers.formatEther(deployerBalance), 'ETH');
+        
+        // Check signers
+        const signers = await hre.ethers.getSigners();
+        console.log('\nSigner Information:');
+        console.log('Number of signers:', signers.length);
+        
+        for (let i = 0; i < signers.length; i++) {
+          try {
+            const signer = signers[i];
+            const address = await signer.getAddress();
+            console.log(`\nSigner ${i}:`);
+            console.log('Address:', address);
+            const balance = await hre.ethers.provider.getBalance(address);
+            console.log('Balance:', hre.ethers.formatEther(balance), 'ETH');
+          } catch (err) {
+            console.log(`Error getting signer ${i} info:`, err.message);
+          }
+        }
+      } catch (err) {
+        console.error('Error in balance check:', err);
+      }
+    }
+
+    main()
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error('Fatal error:', err);
+        process.exit(1);
+      });
+    EOL
+
+    log "Running detailed balance check..."
+    HARDHAT_NETWORK=local npx hardhat run check-balances.js
+
+    # Execute deployment tasks
+    log "Executing deployment tasks..."
+    npx hardhat task:computePredeployAddress --private-key "${PRIVATE_KEY_GATEWAY_DEPLOYER}" || error "Failed to compute predeploy address"
+    npx hardhat task:computeACLAddress || error "Failed to compute ACL address"
+    npx hardhat task:computeTFHEExecutorAddress || error "Failed to compute TFHE executor address"
+    npx hardhat task:computeKMSVerifierAddress || error "Failed to compute KMS verifier address"
+    npx hardhat task:deployACL || error "Failed to deploy ACL"
+    npx hardhat task:deployTFHEExecutor || error "Failed to deploy TFHE executor"
+    npx hardhat task:deployKMSVerifier || error "Failed to deploy KMS verifier"
+    npx hardhat task:launchFhevm --skip-get-coin true || error "Failed to launch FHEVM"
