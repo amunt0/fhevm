@@ -1,6 +1,12 @@
 # FHEVM Zama Helm Chart
 
-This repository contains the Helm chart for deploying the Zama FHEVM development environment on Kubernetes.
+This repository contains the Helm chart for deploying the Zama FHEVM development environment on Kubernetes. 
+
+This chart is designed for use with ArgoCD, and all changes pushed to this repository are automatically merged into the ArgoCD configuration for deployment. To access the ArgoCD dashboard, use the following command:
+
+```bash
+kubectl port-forward deployment/argo-cd-argocd-server 8080:8080 -n argo-system
+```
 
 ## Components
 
@@ -12,6 +18,9 @@ The chart deploys the following components:
 - **KMS Core**: Key Management Service core component
 - **KMS Validator**: Blockchain validator for KMS
 - **Connector**: Service connecting KMS components
+- **Async Test CronJob**: Periodic async testing job
+- **Test Prep CronJob**: Job for preparing test environments
+- **EVM Processor**: Deployment for processing EVM-compatible data
 
 ## Prerequisites
 
@@ -72,6 +81,48 @@ The chart uses PersistentVolumeClaims for storing:
 - Network FHE keys
 - Gateway configuration
 - KMS core keys
+- Test preparation keys
+- EVM block processing data
+
+## Directory Structure
+
+```plaintext
+chart/templates/
+├── _helpers.tpl
+├── configmaps/
+│   ├── fhevm-setup.yaml
+│   ├── gateway-config.yaml
+│   ├── async-test-configmap.yaml
+│   └── test-prep-configmap.yaml
+├── deployments/
+│   ├── kms-validator-deployment.yaml
+│   ├── connector-deployment.yaml
+│   ├── gateway-store-deployment.yaml
+│   ├── gateway-deployment.yaml
+│   ├── fhevm-validator-deployment.yaml
+│   ├── kms-core-deployment.yaml
+│   └── evm-processor-deployment.yaml
+├── jobs/
+│   ├── async-test-cronjob.yaml
+│   └── test-prep-cronjob.yaml
+├── pvcs/
+│   ├── kms-core-pvc.yaml
+│   ├── gateway-pvc.yaml
+│   ├── fhevm-validator-pvcs.yaml
+│   ├── test-prep-keys-pvc.yaml
+│   └── block-processor-pvc.yaml
+├── rbac/
+│   └── test-prep-cronjob.yaml
+├── secrets/
+│   └── test-prep-secrets.yaml
+├── services/
+│   ├── gateway-service.yaml
+│   ├── gateway-store-service.yaml
+│   ├── kms-core-service.yaml
+│   ├── kms-validator-service.yaml
+│   ├── fhevm-validator-service.yaml
+│   └── evm-processor-service.yaml
+```
 
 ## Security Considerations
 
