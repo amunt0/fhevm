@@ -171,3 +171,9 @@ To modify or extend this chart:
 helm template chart/ --debug
 ```
 
+
+this config was built replicating fhevm-zama devops github: https://github.com/zama-ai/fhevm-devops/tree/release/0.5.x
+
+There is no association with the zama team and this is just a built of a helm chart without any changes or additional interpretations of the code.
+
+Please follow their licence from https://github.com/zama-ai/fhevm-devops/blob/release/0.5.x/LICENSE
