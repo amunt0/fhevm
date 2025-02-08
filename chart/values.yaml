@@ -302,6 +302,7 @@ blockProcessor:
 
   persistence:
     size: "5Gi"
+    accessMode: ReadWriteOnce
 
   resources:
     limits:
