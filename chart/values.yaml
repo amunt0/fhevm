@@ -302,7 +302,6 @@ blockProcessor:
 
   persistence:
     size: "5Gi"
-    storageClass: "gp3"
 
   resources:
     limits:
